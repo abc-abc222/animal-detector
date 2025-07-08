@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>動物検出アップローダー</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.8.0/dist/tf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+</head>
+<body>
+  <h2>画像をアップロードして動物検出</h2>
+  <input type="file" id="imageUpload" accept="image/*" />
+  <br />
+  <canvas id="canvas" style="max-width: 100%;"></canvas>
+  <p id="result"></p>
+
+  <script src="config.js"></script>
+  <script>
+    let model;
+    let canvas = document.getElementById('canvas');
+    let ctx = canvas.getContext('2d');
+    let resultP = document.getElementById('result');
+
+    async function loadModel() {
+      model = await cocoSsd.load();
+      console.log("モデルロード完了");
+    }
+
+    async function detectImage(image) {
+      const predictions = await model.detect(image);
+      console.log(predictions);
+      return predictions;
+    }
+
+    document.getElementById('imageUpload').addEventListener('change', async (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const img = new Image();
+      img.onload = async () => {
+        canvas.width = img.width;
+        canvas.height = img.height;
+        ctx.drawImage(img, 0, 0);
+
+        const predictions = await detectImage(img);
+        const animals = ["dog", "cat", "bird", "horse", "sheep", "cow", "elephant", "bear", "zebra", "giraffe"];
+        const detectedAnimals = predictions.filter(p => animals.includes(p.class));
+
+        if (detectedAnimals.length > 0) {
+          resultP.textContent = "動物検出: " + detectedAnimals.map(a => a.class).join(", ");
+          const base64Image = canvas.toDataURL('image/jpeg', 0.7);
+
+          fetch(GAS_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              detectedAnimals: detectedAnimals.map(a => a.class),
+              imageData: base64Image
+            })
+          })
+          .then(res => res.text())
+          .then(text => {
+            console.log("GASからの応答:", text);
+          })
+          .catch(e => {
+            console.error("送信エラー", e);
+          });
+
+        } else {
+          resultP.textContent = "動物は検出されませんでした。";
+        }
+      };
+
+      const reader = new FileReader();
+      reader.onload = e => { img.src = e.target.result; };
+      reader.readAsDataURL(file);
+    });
+
+    loadModel();
+  </script>
+</body>
+</html>
